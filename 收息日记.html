@@ -78,7 +78,7 @@
   .btn-icon:hover { background: #fef2f2; color: var(--danger); }
   .btn-icon-edit:hover { background: var(--primary-light); color: var(--primary); }
 
-  .dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 28px; }
+  .dash-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
   .dash-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow-sm); transition: transform 0.15s, box-shadow 0.15s; }
   .dash-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
   .dash-card .label { font-size: 12px; font-weight: 500; color: var(--muted-text); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
@@ -217,10 +217,20 @@
       <div class="value" id="dashCost">¥0</div>
       <div class="sub" id="dashShares">0 股</div>
     </div>
+    <div class="dash-card" id="dashMvCard">
+      <div class="label">🏷️ 总市值</div>
+      <div class="value" id="dashMv">¥0</div>
+      <div class="sub">按最新价计算</div>
+    </div>
     <div class="dash-card" id="dashPnlCard">
       <div class="label">📊 总盈亏</div>
       <div class="value" id="dashPnl">¥0</div>
       <div class="sub" id="dashPnlPct">—</div>
+    </div>
+    <div class="dash-card" id="dashDailyPnlCard">
+      <div class="label">📊 当日盈亏</div>
+      <div class="value" id="dashDailyPnl">¥0</div>
+      <div class="sub" id="dashDailyPnlSub">—</div>
     </div>
     <div class="dash-card">
       <div class="label">💵 预计年分红</div>
@@ -525,10 +535,17 @@ function render() {
 
   // P&L calculation
   let totalMarketValue = 0;
+  let totalDailyPnl = 0;
+  let hasLiveData = false;
   for (const s of stocks) {
     const shares = getStockShares(s);
     const price = livePrices[s.market + s.code] || s.currentPrice || 0;
     totalMarketValue += shares * price;
+    const liveChg = liveChanges[s.market + s.code];
+    if (liveChg) {
+      totalDailyPnl += liveChg.change * shares;
+      hasLiveData = true;
+    }
   }
   const totalPnl = totalMarketValue - totalCost;
   const pnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
@@ -538,6 +555,21 @@ function render() {
   document.getElementById('dashShares').textContent = totalShares.toLocaleString() + ' 股';
   document.getElementById('dashDividend').textContent = fm(totalDividend);
   document.getElementById('dashYield').textContent = fp(avgYield);
+  document.getElementById('dashMv').textContent = fm(totalMarketValue);
+  const dailyPnlEl = document.getElementById('dashDailyPnl');
+  const dailyPnlSubEl = document.getElementById('dashDailyPnlSub');
+  if (hasLiveData) {
+    dailyPnlEl.textContent = (totalDailyPnl >= 0 ? '+' : '-') + fm(Math.abs(totalDailyPnl));
+    dailyPnlEl.style.color = totalDailyPnl >= 0 ? 'var(--danger)' : 'var(--success)';
+    const dailyPnlPct = totalMarketValue > 0 ? (totalDailyPnl / (totalMarketValue - totalDailyPnl)) * 100 : 0;
+    dailyPnlSubEl.textContent = (totalDailyPnl >= 0 ? '+' : '-') + dailyPnlPct.toFixed(2) + '%';
+    dailyPnlSubEl.style.color = totalDailyPnl >= 0 ? 'var(--danger)' : 'var(--success)';
+  } else {
+    dailyPnlEl.textContent = '—';
+    dailyPnlEl.style.color = '';
+    dailyPnlSubEl.textContent = '暂无行情';
+    dailyPnlSubEl.style.color = '';
+  }
 
   const pnlEl = document.getElementById('dashPnl');
   const pnlPctEl = document.getElementById('dashPnlPct');
