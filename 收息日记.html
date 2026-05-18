@@ -815,7 +815,10 @@ function updateTradeSummary() {
   const calc = calcFromTrades(trades);
   const el = document.getElementById('tradeSummary');
   if (calc.shares > 0) {
-    const mv = (parseFloat(document.getElementById('editCurrentPrice').value) || 0) * calc.shares;
+    const inputPrice = parseFloat(document.getElementById('editCurrentPrice').value);
+    const s = stocks[editIndex];
+    const price = inputPrice || (s ? livePrices[s.market + s.code] || s.currentPrice : 0) || 0;
+    const mv = price * calc.shares;
     const pl = mv - calc.totalCost;
     el.style.display = 'flex';
     el.innerHTML = `
