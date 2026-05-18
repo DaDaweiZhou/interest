@@ -894,6 +894,10 @@ document.querySelectorAll('#editOverlay input, #editOverlay select').forEach(inp
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveEdit(); });
 });
 document.getElementById('editCurrentPrice').addEventListener('input', updateTradeSummary);
+document.getElementById('editCode').addEventListener('blur', function() {
+  const code = this.value.trim();
+  if (code) document.getElementById('editMarket').value = detectMarket(code);
+});
 
 // ── Confirm delete ──
 
@@ -926,7 +930,24 @@ function doDelete() {
   cancelDelete();
 }
 
-// ── Auto-fill stock name ──
+// ── Auto-detect market & fill name ──
+
+function detectMarket(code) {
+  if (/[a-zA-Z]/.test(code)) return 'us';
+  if (/^6\d{5}$/.test(code)) return 'sh';
+  if (/^[03]\d{5}$/.test(code)) return 'sz';
+  if (/^\d{1,5}$/.test(code)) return 'hk';
+  return 'sh';
+}
+
+function autoDetectAndFetch() {
+  const code = document.getElementById('code').value.trim();
+  if (!code) return;
+  const market = detectMarket(code);
+  document.getElementById('market').value = market;
+  document.getElementById('name').value = '';
+  fetchStockName();
+}
 
 function fetchStockName() {
   const market = document.getElementById('market').value;
@@ -955,7 +976,7 @@ function fetchStockName() {
 document.querySelectorAll('.form-grid input').forEach(inp => {
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') addStock(); });
 });
-document.getElementById('code').addEventListener('blur', fetchStockName);
+document.getElementById('code').addEventListener('blur', autoDetectAndFetch);
 document.getElementById('market').addEventListener('change', () => {
   document.getElementById('name').value = '';
   fetchStockName();
