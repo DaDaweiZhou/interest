@@ -97,6 +97,14 @@
   .form-body.open { display: block; }
   .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 14px; }
   .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group.name-group { position: relative; }
+  .suggestions { position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); display: none; max-height: 260px; overflow-y: auto; margin-top: 2px; }
+  .suggest-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; transition: background 0.1s; border-bottom: 1px solid #f3f4f6; }
+  .suggest-item:last-child { border-bottom: none; }
+  .suggest-item:hover { background: var(--primary-light); }
+  .suggest-code { font-weight: 600; font-size: 14px; color: var(--text); white-space: nowrap; }
+  .suggest-name { font-size: 13px; color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .suggest-market { font-size: 11px; color: var(--muted-text); background: #f3f4f6; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
   .form-group label { font-size: 12px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.3px; }
   .form-group input, .form-group select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.15s, box-shadow 0.15s; background: #fafbfc; }
   .form-group input:focus, .form-group select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); background: #fff; }
@@ -120,7 +128,7 @@
   tbody td:last-child { text-align: center; width: 80px; }
 
   .stock-cell { display: flex; align-items: center; gap: 10px; }
-  .stock-avatar { width: 32px; height: 32px; border-radius: 8px; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+  .stock-avatar { width: 32px; height: 32px; border-radius: 8px; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
   .stock-info { display: flex; flex-direction: column; }
   .stock-code { font-size: 13px; font-weight: 400; color: var(--muted-text); }
   .stock-name { font-size: 14px; font-weight: 600; color: var(--text); }
@@ -253,21 +261,13 @@
     <div class="form-body open" id="formBody">
       <div class="form-grid">
         <div class="form-group">
-          <label for="market">🌐 市场</label>
-          <select id="market">
-            <option value="sh" selected>沪市</option>
-            <option value="sz">深市</option>
-            <option value="us">美股</option>
-            <option value="hk">港股</option>
-          </select>
-        </div>
-        <div class="form-group">
           <label for="code">🔖 股票代码</label>
           <input id="code" placeholder="例 AAPL / 600519" autocomplete="off">
         </div>
-        <div class="form-group">
+        <div class="form-group name-group">
           <label for="name">🏢 名称</label>
-          <input id="name" placeholder="自动获取" autocomplete="off">
+          <input id="name" placeholder="输入名称搜索" autocomplete="off">
+          <div class="suggestions" id="stockSuggestions"></div>
         </div>
         <div class="form-group">
           <label for="shares">🔢 买入股数</label>
@@ -331,21 +331,13 @@
     </div>
     <div class="edit-grid">
       <div class="form-group">
-        <label>🌐 市场</label>
-        <select id="editMarket">
-          <option value="sh">🇨🇳 沪市</option>
-          <option value="sz">🇨🇳 深市</option>
-          <option value="us">🇺🇸 美股</option>
-          <option value="hk">🇭🇰 港股</option>
-        </select>
-      </div>
-      <div class="form-group">
         <label>🔖 代码</label>
         <input id="editCode" placeholder="600519">
       </div>
-      <div class="form-group">
+      <div class="form-group name-group">
         <label>🏢 名称</label>
         <input id="editName" placeholder="贵州茅台">
+        <div class="suggestions" id="editStockSuggestions"></div>
       </div>
       <div class="form-group">
         <label>📡 当前价</label>
@@ -609,7 +601,37 @@ function render() {
     const pnlPrice = livePrice || s.currentPrice || 0;
     const pnl = pnlPrice * shares - getStockTotalCost(s);
     const dailyPnl = liveChg ? liveChg.change * shares : null;
-    const initial = s.name ? s.name.charAt(0).toUpperCase() : '?';
+    const stockIcon = function(n) {
+      const m = [
+        [/酒|茅台|五粮液|泸州|汾酒|青岛|张裕|啤酒/, '🍶'],
+        [/银行|工商|建设|农业|招商|交通|兴业|浦发|民生|光大/, '🏦'],
+        [/保险|人寿|人保|太保|平安/, '🛡️'],
+        [/证券|券商|东方财富|同花顺/, '📈'],
+        [/科技|信息|软件|电子|芯片|半导体|互联网|腾讯|阿里|百度|京东|小米|美团|网易|字节|Apple|Microsoft|Google|Amazon/, '💻'],
+        [/医药|药|医疗|生物|康/, '💊'],
+        [/汽车|车|Tesla|比亚迪|理想|蔚来|小鹏|吉利|长城|宝马|奔驰|本田|丰田/, '🚗'],
+        [/新能源|光伏|风电|锂电/, '⚡'],
+        [/通信|移动|联通|电信|AT&T|Verizon|T-Mobile/, '📡'],
+        [/地产|万科|保利|置业|房产|碧桂园|恒大/, '🏠'],
+        [/食品|乳业|伊利|蒙牛|饮料|榨菜|酱油|海天|调味|Coca|Pepsi|麦当劳|肯德基|星巴克/, '🍜'],
+        [/零售|超市|永辉|苏宁|国美|Walmart|Costco|Amazon/, '🛒'],
+        [/航空|机场|Delta|United|American|Southwest/, '✈️'],
+        [/电力|电网|华能|国电|华电/, '💡'],
+        [/煤炭|煤|神华|中煤/, '⛏️'],
+        [/石油|石化|中海油|中石油|能源|Exxon|Chevron|Shell|BP/, '🛢️'],
+        [/军工|国防|航天/, '⚔️'],
+        [/传媒|影视|电影|游戏|快手|哔哩|B站|Disney|Netflix|Spotify/, '🎬'],
+        [/化工|化学/, '🧪'],
+        [/机械|装备|重工|三一|中联|Caterpillar|Deere/, '⚙️'],
+        [/建筑|建设|中铁|中建|交建|工程/, '🏗️'],
+        [/服装|服饰|鞋|纺织|Nike|Adidas/, '👕'],
+        [/家电|格力|美的|海尔|Samsung|LG|松下|索尼/, '🔌'],
+        [/黄金|有色|铝业|铜业/, '🥇'],
+        [/香港|恒生/, '🏛️'],
+      ];
+      for (const [p, i] of m) { if (p.test(n)) return i; }
+      return '📊';
+    }(s.name || '');
     const yieldClass = y >= 0.03 ? 'high' : y >= 0.01 ? 'mid' : 'low';
     let priceDisplay = '';
     if (livePrice !== undefined) {
@@ -623,7 +645,7 @@ function render() {
     return `<tr>
       <td>
         <div class="stock-cell">
-          <div class="stock-avatar">${escHtml(initial)}</div>
+          <div class="stock-avatar">${stockIcon}</div>
           <div class="stock-info">
             <span class="stock-name">${escHtml(s.name)}</span>
             <span class="stock-code">${escHtml(s.code)} <span style="font-size:11px;color:#9ca3af;font-weight:400">${MARKET_NAMES[s.market] || s.market}</span></span>
@@ -653,7 +675,6 @@ function render() {
 // ── Add stock ──
 
 function addStock() {
-  const market = document.getElementById('market').value;
   const code = document.getElementById('code').value.trim();
   const name = document.getElementById('name').value.trim() || '?';
   const shares = parseInt(document.getElementById('shares').value) || 0;
@@ -664,6 +685,7 @@ function addStock() {
   if (!code) { alert('请输入股票代码'); return; }
   if (shares <= 0) { alert('买入股数必须大于 0'); return; }
 
+  const market = detectMarket(code);
   stocks.push({ market, code, name, currentPrice, dividendPerShare, trades: [{ shares, price: costPrice }] });
   save();
   render();
@@ -671,7 +693,6 @@ function addStock() {
   setTimeout(() => { fetchPricesForStock(stocks.length - 1); }, 200);
 
   ['code','name','shares','costPrice','currentPrice','dividendPerShare'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('market').value = 'sh';
   document.getElementById('code').focus();
 }
 
@@ -785,7 +806,6 @@ let editIndex = -1;
 function editStock(index) {
   editIndex = index;
   const s = stocks[index];
-  document.getElementById('editMarket').value = s.market || 'sh';
   document.getElementById('editCode').value = s.code || '';
   document.getElementById('editName').value = s.name || '';
   document.getElementById('editCurrentPrice').value = s.currentPrice || '';
@@ -865,7 +885,6 @@ function updateTradeSummary() {
 
 function saveEdit() {
   if (editIndex < 0 || editIndex >= stocks.length) return;
-  const market = document.getElementById('editMarket').value;
   const code = document.getElementById('editCode').value.trim();
   const name = document.getElementById('editName').value.trim();
   const currentPrice = parseFloat(document.getElementById('editCurrentPrice').value) || 0;
@@ -875,6 +894,7 @@ function saveEdit() {
   if (!code) { alert('请输入股票代码'); return; }
   if (trades.length === 0) { alert('请至少添加一条买入记录'); return; }
 
+  const market = detectMarket(code);
   const oldKey = stocks[editIndex].market + stocks[editIndex].code;
   stocks[editIndex] = { market, code, name, currentPrice, dividendPerShare, trades };
   save();
@@ -894,10 +914,6 @@ document.querySelectorAll('#editOverlay input, #editOverlay select').forEach(inp
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveEdit(); });
 });
 document.getElementById('editCurrentPrice').addEventListener('input', updateTradeSummary);
-document.getElementById('editCode').addEventListener('blur', function() {
-  const code = this.value.trim();
-  if (code) document.getElementById('editMarket').value = detectMarket(code);
-});
 
 // ── Confirm delete ──
 
@@ -943,17 +959,15 @@ function detectMarket(code) {
 function autoDetectAndFetch() {
   const code = document.getElementById('code').value.trim();
   if (!code) return;
-  const market = detectMarket(code);
-  document.getElementById('market').value = market;
   document.getElementById('name').value = '';
   fetchStockName();
 }
 
 function fetchStockName() {
-  const market = document.getElementById('market').value;
   const code = document.getElementById('code').value.trim();
   const nameInput = document.getElementById('name');
   if (!code || nameInput.value.trim()) return;
+  const market = detectMarket(code);
   const script = document.createElement('script');
   script.src = `https://qt.gtimg.cn/q=${market}${code}`; script.charset = 'GBK';
   const timeout = setTimeout(() => script.remove(), 5000);
@@ -971,15 +985,82 @@ function fetchStockName() {
   document.head.appendChild(script);
 }
 
+// ── Name search ──
+
+let suggestTimer = null;
+
+function searchByName(keyword, containerId, codeId, nameId) {
+  const cb = 'suggest_' + Date.now();
+  window[cb] = function(data) {
+    delete window[cb];
+    const container = document.getElementById(containerId);
+    if (data && data.Code === 0 && data.Data && data.Data.length > 0) {
+      const marketMap = { 'SH': 'sh', 'SZ': 'sz', 'HK': 'hk' };
+      container.innerHTML = data.Data.map(item => {
+        const m = marketMap[item.Type] || 'sh';
+        return `<div class="suggest-item" data-code="${item.Code}" data-market="${m}" data-name="${item.Name}">
+          <span class="suggest-code">${item.Code}</span>
+          <span class="suggest-name">${escHtml(item.Name)}</span>
+          <span class="suggest-market">${MARKET_NAMES[m] || m}</span>
+        </div>`;
+      }).join('');
+      container.style.display = 'block';
+      container.onclick = function(e) {
+        const item = e.target.closest('.suggest-item');
+        if (!item) return;
+        document.getElementById(codeId).value = item.dataset.code;
+        document.getElementById(nameId).value = item.dataset.name;
+        container.style.display = 'none';
+      };
+    } else {
+      container.style.display = 'none';
+    }
+  };
+  const script = document.createElement('script');
+  script.src = `https://searchadapter.eastmoney.com/api/suggest/get?input=${encodeURIComponent(keyword)}&type=14&callback=${cb}`;
+  script.onerror = function() { delete window[cb]; script.remove(); if (document.getElementById(containerId)) document.getElementById(containerId).style.display = 'none'; };
+  document.head.appendChild(script);
+  setTimeout(() => { if (window[cb]) delete window[cb]; script.remove(); }, 8000);
+}
+
+function onNameInput() {
+  clearTimeout(suggestTimer);
+  const keyword = document.getElementById('name').value.trim();
+  const container = document.getElementById('stockSuggestions');
+  if (keyword.length < 2) { container.style.display = 'none'; return; }
+  suggestTimer = setTimeout(() => searchByName(keyword, 'stockSuggestions', 'code', 'name'), 300);
+}
+
+function onEditNameInput() {
+  clearTimeout(suggestTimer);
+  const keyword = document.getElementById('editName').value.trim();
+  const container = document.getElementById('editStockSuggestions');
+  if (keyword.length < 2) { container.style.display = 'none'; return; }
+  suggestTimer = setTimeout(() => searchByName(keyword, 'editStockSuggestions', 'editCode', 'editName'), 300);
+}
+
 // ── Input events ──
 
 document.querySelectorAll('.form-grid input').forEach(inp => {
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') addStock(); });
 });
 document.getElementById('code').addEventListener('blur', autoDetectAndFetch);
-document.getElementById('market').addEventListener('change', () => {
-  document.getElementById('name').value = '';
-  fetchStockName();
+document.getElementById('name').addEventListener('input', onNameInput);
+document.getElementById('name').addEventListener('blur', function() {
+  setTimeout(() => document.getElementById('stockSuggestions').style.display = 'none', 200);
+});
+document.getElementById('editName').addEventListener('input', onEditNameInput);
+document.getElementById('editName').addEventListener('blur', function() {
+  setTimeout(() => document.getElementById('editStockSuggestions').style.display = 'none', 200);
+});
+document.addEventListener('click', function(e) {
+  ['stockSuggestions', 'editStockSuggestions'].forEach(id => {
+    const container = document.getElementById(id);
+    if (container && container.style.display === 'block' && !container.contains(e.target)) {
+      const nameInput = id === 'stockSuggestions' ? document.getElementById('name') : document.getElementById('editName');
+      if (e.target !== nameInput) container.style.display = 'none';
+    }
+  });
 });
 
 // ── Init ──
