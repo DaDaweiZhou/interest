@@ -353,7 +353,7 @@
     <div style="border-top:1px solid var(--border);padding-top:16px;margin:16px 0">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <span style="font-size:14px;font-weight:600;color:var(--text-secondary)">📋 交易记录</span>
-        <button class="btn btn-secondary" onclick="addTradeRow()" style="font-size:12px;padding:4px 12px">＋ 添加买入</button>
+        <button class="btn btn-secondary" onclick="addTradeRow()" style="font-size:12px;padding:4px 12px">＋ 添加</button>
       </div>
       <div id="tradeList"></div>
       <div id="tradeSummary" style="display:none;font-size:13px;padding:10px 14px;background:#f9fafb;border-radius:6px;margin-top:8px;gap:16px;flex-wrap:wrap"></div>
@@ -406,7 +406,7 @@ function load() {
   // Migrate legacy stocks without trades
   for (const s of stocks) {
     if (!s.trades && s.shares > 0 && s.costPrice > 0) {
-      s.trades = [{ shares: s.shares, price: s.costPrice }];
+      s.trades = [{ type: 'buy', shares: s.shares, price: s.costPrice }];
     }
   }
   render();
@@ -421,13 +421,19 @@ function calcFromTrades(trades) {
   for (const t of trades) {
     const sh = parseInt(t.shares) || 0;
     const pr = parseFloat(t.price) || 0;
-    totalShares += sh;
-    totalCost += sh * pr;
+    if (t.type === 'sell') {
+      const avgCost = totalShares > 0 ? totalCost / totalShares : 0;
+      totalShares -= sh;
+      totalCost -= sh * avgCost;
+    } else {
+      totalShares += sh;
+      totalCost += sh * pr;
+    }
   }
   return {
-    shares: totalShares,
+    shares: Math.max(0, totalShares),
     costPrice: totalShares > 0 ? totalCost / totalShares : 0,
-    totalCost: totalCost
+    totalCost: Math.max(0, totalCost)
   };
 }
 
@@ -565,7 +571,6 @@ function render() {
 
   const pnlEl = document.getElementById('dashPnl');
   const pnlPctEl = document.getElementById('dashPnlPct');
-  const pnlCard = document.getElementById('dashPnlCard');
   pnlEl.textContent = (totalPnl >= 0 ? '+' : '-') + fm(Math.abs(totalPnl));
   pnlPctEl.textContent = (totalPnl >= 0 ? '+' : '-') + pnlPct.toFixed(2) + '%';
   pnlEl.style.color = totalPnl >= 0 ? 'var(--danger)' : 'var(--success)';
@@ -654,14 +659,14 @@ function render() {
           </div>
         </div>
       </td>
-      <td><span class="cost-cell" onclick="editCell(${i},'costPrice',this)" title="加权平均成本">${fm(costPrice)}</span></td>
+      <td>${fm(costPrice)}</td>
       <td>${priceDisplay}</td>
-      <td><span class="cost-cell" onclick="editCell(${i},'shares',this)" title="点击编辑">${shares.toLocaleString()}</span></td>
+      <td>${shares.toLocaleString()}</td>
       <td><span class="cost-cell" onclick="editCell(${i},'dividendPerShare',this)" title="点击编辑">${fm(s.dividendPerShare)}</span></td>
       <td><span class="yield-badge ${yieldClass}">${fp(y)}</span></td>
       <td><span class="yield-badge low">${fp(costYield)}</span></td>
       <td class="dividend-cell">${fm(d)}</td>
-	      <td style="font-weight:600;${dailyPnl !== null ? 'color:' + (dailyPnl >= 0 ? 'var(--danger)' : 'var(--success)') : 'color:var(--muted-text)'}">${dailyPnl !== null ? (dailyPnl >= 0 ? '+' : '-') + fm(Math.abs(dailyPnl)) : '—'}</td>
+      <td style="font-weight:600;${dailyPnl !== null ? 'color:' + (dailyPnl >= 0 ? 'var(--danger)' : 'var(--success)') : 'color:var(--muted-text)'}">${dailyPnl !== null ? (dailyPnl >= 0 ? '+' : '-') + fm(Math.abs(dailyPnl)) : '—'}</td>
       <td style="font-weight:600;color:${pnl >= 0 ? 'var(--danger)' : 'var(--success)'}">${pnl >= 0 ? '+' : '-'}${fm(Math.abs(pnl))}</td>
       <td>
         <div style="display:flex;gap:2px;justify-content:center">
@@ -688,7 +693,7 @@ function addStock() {
   if (shares <= 0) { alert('买入股数必须大于 0'); return; }
 
   const market = detectMarket(code);
-  stocks.push({ market, code, name, currentPrice, dividendPerShare, trades: [{ shares, price: costPrice }] });
+  stocks.push({ market, code, name, currentPrice, dividendPerShare, trades: [{ type: 'buy', shares, price: costPrice }] });
   save();
   render();
 
@@ -756,7 +761,7 @@ function editCell(index, field, el) {
 function showTrades(index) {
   if (index < 0 || index >= stocks.length) return;
   const s = stocks[index];
-  const trades = s.trades || [{ shares: getStockShares(s), price: getStockCostPrice(s) }];
+  const trades = s.trades || [{ type: 'buy', shares: getStockShares(s), price: getStockCostPrice(s) }];
   document.getElementById('tradeModalTitle').textContent = `📋 ${s.code} ${s.name} - 交易记录`;
 
   let html = '';
@@ -766,23 +771,28 @@ function showTrades(index) {
     html = '<table style="width:100%;font-size:13px;border-collapse:collapse">';
     html += '<thead><tr style="background:#f8fafc">' +
       '<th style="padding:8px 10px;text-align:left;font-weight:600;color:var(--muted-text);border-bottom:1px solid var(--border)">#</th>' +
+      '<th style="padding:8px 10px;text-align:center;font-weight:600;color:var(--muted-text);border-bottom:1px solid var(--border)">类型</th>' +
       '<th style="padding:8px 10px;text-align:right;font-weight:600;color:var(--muted-text);border-bottom:1px solid var(--border)">股数</th>' +
-      '<th style="padding:8px 10px;text-align:right;font-weight:600;color:var(--muted-text);border-bottom:1px solid var(--border)">买入价</th>' +
-      '<th style="padding:8px 10px;text-align:right;font-weight:600;color:var(--muted-text);border-bottom:1px solid var(--border)">买入金额</th></tr></thead><tbody>';
+      '<th style="padding:8px 10px;text-align:right;font-weight:600;color:var(--muted-text);border-bottom:1px solid var(--border)">价格</th>' +
+      '<th style="padding:8px 10px;text-align:right;font-weight:600;color:var(--muted-text);border-bottom:1px solid var(--border)">金额</th></tr></thead><tbody>';
     trades.forEach((t, i) => {
+      const isSell = t.type === 'sell';
       const sh = parseInt(t.shares) || 0;
       const pr = parseFloat(t.price) || 0;
       const total = sh * pr;
+      const typeLabel = isSell ? '<span style="color:var(--success)">卖出</span>' : '<span style="color:var(--primary)">买入</span>';
       html += `<tr style="border-bottom:1px solid #f3f4f6">
         <td style="padding:8px 10px;text-align:left;color:var(--muted-text)">${i + 1}</td>
+        <td style="padding:8px 10px;text-align:center">${typeLabel}</td>
         <td style="padding:8px 10px;text-align:right;font-weight:600">${sh.toLocaleString()}</td>
         <td style="padding:8px 10px;text-align:right">${fm(pr)}</td>
-        <td style="padding:8px 10px;text-align:right;font-weight:500">${fm(total)}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:500">${isSell ? '-' : ''}${fm(total)}</td>
       </tr>`;
     });
     const calc = calcFromTrades(trades);
     html += `<tr style="background:#f9fafb;font-weight:600">
       <td style="padding:8px 10px;text-align:left">合计</td>
+      <td></td>
       <td style="padding:8px 10px;text-align:right">${calc.shares.toLocaleString()}</td>
       <td style="padding:8px 10px;text-align:right">均价 ${fm(calc.costPrice)}</td>
       <td style="padding:8px 10px;text-align:right">${fm(calc.totalCost)}</td>
@@ -813,7 +823,7 @@ function editStock(index) {
   document.getElementById('editCurrentPrice').value = s.currentPrice || '';
   document.getElementById('editDividend').value = s.dividendPerShare || '';
   document.getElementById('editOverlay').style.display = 'flex';
-  renderTradeList(s.trades || [{ shares: getStockShares(s), price: getStockCostPrice(s) }]);
+  renderTradeList(s.trades || [{ type: 'buy', shares: getStockShares(s), price: getStockCostPrice(s) }]);
 }
 
 function closeEditModal() {
@@ -826,33 +836,47 @@ function getEditTrades() {
   const rows = container.querySelectorAll('.trade-row');
   const trades = [];
   for (const row of rows) {
+    const type = row.querySelector('.tr-type').value;
     const shares = parseInt(row.querySelector('.tr-shares').value) || 0;
     const price = parseFloat(row.querySelector('.tr-price').value) || 0;
-    if (shares > 0 && price > 0) trades.push({ shares, price });
+    if (shares > 0 && price > 0) trades.push({ type, shares, price });
   }
   return trades;
 }
 
 function renderTradeList(trades) {
   const container = document.getElementById('tradeList');
-  if (!trades || trades.length === 0) trades = [{ shares: '', price: '' }];
-  container.innerHTML = trades.map((t, i) => `
+  if (!trades || trades.length === 0) trades = [{ type: 'buy', shares: '', price: '' }];
+  container.innerHTML = trades.map((t, i) => {
+    const isSell = t.type === 'sell';
+    const amount = (t.shares && t.price) ? (isSell ? '-¥' : '¥') + (t.shares * t.price).toLocaleString('zh-CN',{minimumFractionDigits:2}) : '';
+    return `
     <div class="trade-row">
+      <select class="tr-type" onchange="updateTradeSummary()" style="padding:6px 4px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;font-family:inherit;background:#fafbfc;outline:none;cursor:pointer">
+        <option value="buy" ${isSell ? '' : 'selected'}>买入</option>
+        <option value="sell" ${isSell ? 'selected' : ''}>卖出</option>
+      </select>
       <span class="trade-label">股数</span>
       <input class="tr-shares" type="number" step="1" value="${t.shares || ''}" placeholder="100" oninput="updateTradeSummary()" onfocus="this.select()">
       <span class="trade-label">价格</span>
       <input class="tr-price" type="number" step="0.01" value="${t.price || ''}" placeholder="150.00" oninput="updateTradeSummary()" onfocus="this.select()">
-      <span class="trade-label" style="min-width:60px;text-align:right;font-weight:600;color:var(--text)">${(t.shares && t.price) ? '¥' + (t.shares * t.price).toLocaleString('zh-CN',{minimumFractionDigits:2}) : ''}</span>
+      <span class="trade-label" style="min-width:60px;text-align:right;font-weight:600;color:var(--text)">${amount}</span>
       <button class="btn-icon tr-del" onclick="this.closest('.trade-row').remove();updateTradeSummary()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   updateTradeSummary();
 }
 
-function addTradeRow() {
+function addTradeRow(type) {
   const container = document.getElementById('tradeList');
   const row = document.createElement('div');
   row.className = 'trade-row';
+  const isSell = type === 'sell';
   row.innerHTML = `
+    <select class="tr-type" onchange="updateTradeSummary()" style="padding:6px 4px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;font-family:inherit;background:#fafbfc;outline:none;cursor:pointer">
+      <option value="buy" ${isSell ? '' : 'selected'}>买入</option>
+      <option value="sell" ${isSell ? 'selected' : ''}>卖出</option>
+    </select>
     <span class="trade-label">股数</span>
     <input class="tr-shares" type="number" step="1" placeholder="100" oninput="updateTradeSummary()">
     <span class="trade-label">价格</span>
@@ -894,7 +918,7 @@ function saveEdit() {
   const trades = getEditTrades();
 
   if (!code) { alert('请输入股票代码'); return; }
-  if (trades.length === 0) { alert('请至少添加一条买入记录'); return; }
+  if (trades.length === 0) { alert('请至少添加一条交易记录'); return; }
 
   const market = detectMarket(code);
   const oldKey = stocks[editIndex].market + stocks[editIndex].code;
@@ -912,7 +936,7 @@ function saveEdit() {
 document.getElementById('editOverlay').addEventListener('click', function(e) {
   if (e.target === this) closeEditModal();
 });
-document.querySelectorAll('#editOverlay input, #editOverlay select').forEach(inp => {
+document.querySelectorAll('#editOverlay .edit-grid input, #editOverlay .edit-grid select').forEach(inp => {
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveEdit(); });
 });
 document.getElementById('editCurrentPrice').addEventListener('input', updateTradeSummary);
