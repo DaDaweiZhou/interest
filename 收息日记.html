@@ -163,6 +163,8 @@
   .confirm-box .actions { display: flex; gap: 10px; justify-content: flex-end; }
   .btn-cancel { background: #f3f4f6; color: var(--text-secondary); }
   .btn-cancel:hover { background: #e5e7eb; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-danger:hover { background: #dc2626; }
 
   .edit-box { background: var(--card); border-radius: 12px; padding: 28px; max-width: 560px; width: 92%; box-shadow: 0 20px 60px rgba(0,0,0,0.15); animation: slideUp 0.15s; max-height: 90vh; overflow-y: auto; }
   .edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -919,6 +921,8 @@ function saveEdit() {
 
   if (!code) { alert('请输入股票代码'); return; }
   if (trades.length === 0) { alert('请至少添加一条交易记录'); return; }
+  const calcResult = calcFromTrades(trades);
+  if (calcResult.shares <= 0) { alert('持仓股数必须大于 0，请检查买入/卖出记录'); return; }
 
   const market = detectMarket(code);
   const oldKey = stocks[editIndex].market + stocks[editIndex].code;
