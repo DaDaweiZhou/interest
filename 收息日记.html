@@ -232,6 +232,11 @@
       <div class="value" id="dashMv">¥0</div>
       <div class="sub">按最新价计算</div>
     </div>
+    <div class="dash-card accent-primary" id="dashBalanceCard">
+      <div class="label">💳 账户余额</div>
+      <div class="value" id="dashBalance">¥0</div>
+      <div class="sub" id="dashBalanceSub">点击设置</div>
+    </div>
     <div class="dash-card" id="dashPnlCard">
       <div class="label">📊 总盈亏</div>
       <div class="value" id="dashPnl">¥0</div>
@@ -400,6 +405,7 @@ window.onerror = function(msg, url, line, col, err) {
 const STORAGE_KEY = 'interest_dividend_tracker';
 const MARKET_NAMES = { us: '🇺🇸 美股', sh: '🇨🇳 沪市', sz: '🇨🇳 深市', hk: '🇭🇰 港股' };
 let stocks = [];
+let balance = 0;
 let livePrices = {};
 let liveChanges = {};
 let fetching = false;
@@ -407,7 +413,16 @@ let fetching = false;
 // ── Load / Save ──
 
 function load() {
-  try { stocks = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { stocks = []; }
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (Array.isArray(raw)) {
+      stocks = raw;
+      balance = 0;
+    } else if (raw && typeof raw === 'object') {
+      stocks = raw.stocks || [];
+      balance = raw.balance || 0;
+    }
+  } catch { stocks = []; balance = 0; }
   // Migrate legacy stocks without trades
   for (const s of stocks) {
     if (!s.trades && s.shares > 0 && s.costPrice > 0) {
@@ -416,7 +431,7 @@ function load() {
   }
   render();
 }
-function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(stocks)); }
+function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify({ stocks, balance })); }
 
 // ── Calculations ──
 
@@ -454,6 +469,14 @@ function calcDividend(s) { return (s.dividendPerShare || 0) * getStockShares(s);
 
 const fm = (v) => '¥' + Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fp = (v) => (v * 100).toFixed(2) + '%';
+
+function calcCashFlow(trades) {
+  if (!trades) return 0;
+  return trades.reduce((sum, t) => {
+    const amt = (parseInt(t.shares) || 0) * (parseFloat(t.price) || 0);
+    return sum + (t.type === 'sell' ? amt : -amt);
+  }, 0);
+}
 
 function escHtml(s) {
   const d = document.createElement('div');
@@ -559,6 +582,9 @@ function render() {
   document.getElementById('dashDividend').textContent = fm(totalDividend);
   document.getElementById('dashYield').textContent = fp(avgYield);
   document.getElementById('dashMv').textContent = fm(totalMarketValue);
+  const balanceEl = document.getElementById('dashBalance');
+  balanceEl.textContent = fm(balance);
+  balanceEl.style.color = balance >= 0 ? 'var(--primary)' : 'var(--danger)';
   const dailyPnlEl = document.getElementById('dashDailyPnl');
   const dailyPnlSubEl = document.getElementById('dashDailyPnlSub');
   if (hasLiveData) {
@@ -699,6 +725,7 @@ function addStock() {
 
   const market = detectMarket(code);
   stocks.push({ market, code, name, currentPrice, dividendPerShare, trades: [{ type: 'buy', shares, price: costPrice }] });
+  balance -= shares * costPrice;
   save();
   render();
 
@@ -841,7 +868,7 @@ function getEditTrades() {
   const rows = container.querySelectorAll('.trade-row');
   const trades = [];
   for (const row of rows) {
-    const type = row.querySelector('.tr-type').value;
+    const type = row.dataset.type || 'buy';
     const shares = parseInt(row.querySelector('.tr-shares').value) || 0;
     const price = parseFloat(row.querySelector('.tr-price').value) || 0;
     if (shares > 0 && price > 0) trades.push({ type, shares, price });
@@ -856,11 +883,8 @@ function renderTradeList(trades) {
     const isSell = t.type === 'sell';
     const amount = (t.shares && t.price) ? (isSell ? '-¥' : '¥') + (t.shares * t.price).toLocaleString('zh-CN',{minimumFractionDigits:2}) : '';
     return `
-    <div class="trade-row">
-      <select class="tr-type" onchange="updateTradeSummary()" style="padding:6px 4px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;font-family:inherit;background:#fafbfc;outline:none;cursor:pointer">
-        <option value="buy" ${isSell ? '' : 'selected'}>买入</option>
-        <option value="sell" ${isSell ? 'selected' : ''}>卖出</option>
-      </select>
+    <div class="trade-row" data-type="${isSell ? 'sell' : 'buy'}">
+      <span style="display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;flex-shrink:0;${isSell ? 'color:var(--success);background:var(--success-bg)' : 'color:var(--primary);background:var(--primary-light)'}">${isSell ? '卖出' : '买入'}</span>
       <span class="trade-label">股数</span>
       <input class="tr-shares" type="number" step="1" value="${t.shares || ''}" placeholder="100" oninput="updateTradeSummary()" onfocus="this.select()">
       <span class="trade-label">价格</span>
@@ -876,12 +900,10 @@ function addTradeRow(type) {
   const container = document.getElementById('tradeList');
   const row = document.createElement('div');
   row.className = 'trade-row';
+  row.dataset.type = type || 'buy';
   const isSell = type === 'sell';
   row.innerHTML = `
-    <select class="tr-type" onchange="updateTradeSummary()" style="padding:6px 4px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;font-family:inherit;background:#fafbfc;outline:none;cursor:pointer">
-      <option value="buy" ${isSell ? '' : 'selected'}>买入</option>
-      <option value="sell" ${isSell ? 'selected' : ''}>卖出</option>
-    </select>
+    <span style="display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;flex-shrink:0;${isSell ? 'color:var(--success);background:var(--success-bg)' : 'color:var(--primary);background:var(--primary-light)'}">${isSell ? '卖出' : '买入'}</span>
     <span class="trade-label">股数</span>
     <input class="tr-shares" type="number" step="1" placeholder="100" oninput="updateTradeSummary()">
     <span class="trade-label">价格</span>
@@ -929,6 +951,10 @@ function saveEdit() {
 
   const market = detectMarket(code);
   const oldKey = stocks[editIndex].market + stocks[editIndex].code;
+  const oldTrades = stocks[editIndex].trades || [];
+  const oldFlow = calcCashFlow(oldTrades);
+  const newFlow = calcCashFlow(trades);
+  balance += newFlow - oldFlow;
   stocks[editIndex] = { market, code, name, currentPrice, dividendPerShare, trades };
   save();
   closeEditModal();
@@ -972,6 +998,7 @@ function cancelDelete() { const el = document.getElementById('confirmOverlay'); 
 function doDelete() {
   if (deleteIndex >= 0) {
     const s = stocks[deleteIndex];
+    balance -= calcCashFlow(s.trades);
     stocks.splice(deleteIndex, 1);
     delete livePrices[s.market + s.code]; delete liveChanges[s.market + s.code];
     save(); render();
@@ -1099,6 +1126,22 @@ document.addEventListener('click', function(e) {
 // ── Init ──
 load();
 setTimeout(fetchPrices, 500);
+
+document.getElementById('dashBalanceCard').addEventListener('click', function() {
+  const el = document.getElementById('dashBalance');
+  if (el.querySelector('input')) return;
+  const current = balance || 0;
+  el.innerHTML = `<input class="editable-input" type="number" step="any" value="${current}" autofocus style="width:110px">`;
+  const input = el.querySelector('input');
+  input.focus(); input.select();
+  const finish = () => {
+    const val = parseFloat(input.value);
+    if (!isNaN(val) && val >= 0) { balance = val; save(); }
+    render();
+  };
+  input.onblur = finish;
+  input.onkeydown = (e) => { if (e.key === 'Enter') { input.blur(); } if (e.key === 'Escape') { render(); } };
+});
 </script>
 </body>
 </html>
