@@ -355,7 +355,10 @@
     <div style="border-top:1px solid var(--border);padding-top:16px;margin:16px 0">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <span style="font-size:14px;font-weight:600;color:var(--text-secondary)">📋 交易记录</span>
-        <button class="btn btn-secondary" onclick="addTradeRow()" style="font-size:12px;padding:4px 12px">＋ 添加</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-secondary" onclick="addTradeRow('buy')" style="font-size:12px;padding:4px 12px">＋ 买入</button>
+          <button class="btn btn-secondary" onclick="addTradeRow('sell')" style="font-size:12px;padding:4px 12px">－ 卖出</button>
+        </div>
       </div>
       <div id="tradeList"></div>
       <div id="tradeSummary" style="display:none;font-size:13px;padding:10px 14px;background:#f9fafb;border-radius:6px;margin-top:8px;gap:16px;flex-wrap:wrap"></div>
