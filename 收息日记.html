@@ -461,10 +461,6 @@ function getStockShares(s) { return s.trades ? calcFromTrades(s.trades).shares :
 function getStockCostPrice(s) { return s.trades ? calcFromTrades(s.trades).costPrice : (s.costPrice || 0); }
 function getStockTotalCost(s) { return getStockShares(s) * getStockCostPrice(s); }
 
-function calcYield(s) {
-  const cp = s.currentPrice || 0;
-  return cp ? (s.dividendPerShare || 0) / cp : 0;
-}
 function calcDividend(s) { return (s.dividendPerShare || 0) * getStockShares(s); }
 
 const fm = (v) => '¥' + Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -631,7 +627,8 @@ function render() {
     const liveKey = s.market + s.code;
     const livePrice = livePrices[liveKey];
     const liveChg = liveChanges[liveKey];
-    const y = calcYield(s);
+    const yPrice = livePrice || s.currentPrice || 0;
+    const y = yPrice > 0 ? (s.dividendPerShare || 0) / yPrice : 0;
     const costYield = costPrice > 0 ? (s.dividendPerShare || 0) / costPrice : 0;
     const d = calcDividend(s);
     const pnlPrice = livePrice || s.currentPrice || 0;
